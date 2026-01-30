@@ -31,6 +31,10 @@ def get_term(node: ASTNode) -> Tuple[float, ASTNode]:
             return (node.left.value, node.right)
     # Unary -x -> (-1, x)
     if isinstance(node, UnaryOp) and node.op == Op.SUB:
+         # Handle -(2 * x) -> (-2, x)
+         if isinstance(node.operand, BinaryOp) and node.operand.op == Op.MUL:
+             if isinstance(node.operand.left, Number):
+                 return (-1 * node.operand.left.value, node.operand.right)
          return (-1, node.operand)
     return (1, node)
 
@@ -130,12 +134,21 @@ def simplify(node: ASTNode) -> ASTNode:
                  x = node.left.right
                  return simplify(BinaryOp(c, Op.MUL, BinaryOp(x, Op.MUL, node.right)))
             
+            # Handle Negatives: (-a) * b -> -(a * b)
+            is_left_neg = isinstance(node.left, UnaryOp) and node.left.op == Op.SUB
+            is_right_neg = isinstance(node.right, UnaryOp) and node.right.op == Op.SUB
+            
+            if is_left_neg and is_right_neg:
+                # (-a) * (-b) -> a * b
+                return simplify(BinaryOp(node.left.operand, Op.MUL, node.right.operand))
+            elif is_left_neg:
+                # (-a) * b -> -(a * b)
+                return simplify(UnaryOp(Op.SUB, BinaryOp(node.left.operand, Op.MUL, node.right)))
+            elif is_right_neg:
+                # a * (-b) -> -(a * b)
+                return simplify(UnaryOp(Op.SUB, BinaryOp(node.left, Op.MUL, node.right.operand)))
+
             # Combine Powers: x^a * x^b -> x^(a+b)
-            # This needs to handle cases where x is Base (not Coeff*Base).
-            # But get_term handles Coeff*Base.
-            # get_power handles Base^Exp.
-            # If left is Number, we bubbled it.
-            # If both are variables/powers/functions (Rank > 0).
             if get_rank(node.left) > 0 and get_rank(node.right) > 0:
                 b1, e1 = get_power(node.left)
                 b2, e2 = get_power(node.right)
@@ -182,6 +195,9 @@ def simplify(node: ASTNode) -> ASTNode:
         if isinstance(node.operand, Number):
             if node.op == Op.ADD: return node.operand
             if node.op == Op.SUB: return Number(-node.operand.value)
+        # Simplify -(-x) -> x
+        if node.op == Op.SUB and isinstance(node.operand, UnaryOp) and node.operand.op == Op.SUB:
+             return node.operand.operand
     
     elif isinstance(node, FunctionCall):
         new_args = [simplify(arg) for arg in node.args]

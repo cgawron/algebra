@@ -14,7 +14,8 @@ def main():
         "x * x * x",
         "sin(30 * x)",
         "exp(x^2 + 1)",
-        "ln(x^2 + 1)"
+        "ln(x^2 + 1)",
+        "sin(x)^2 + cos(x)^2"
     ]
     
     for expr in expressions:

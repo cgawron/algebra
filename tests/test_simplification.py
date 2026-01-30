@@ -92,5 +92,47 @@ class TestSimplification(unittest.TestCase):
         self.assertEqual(simplified.right.left.name, "x")
         self.assertEqual(simplified.right.right.value, 2)
 
+    def test_negative_simplification(self):
+        # 2 * (-sin(x) * cos(x)) + 2 * (cos(x) * sin(x)) -> 0
+        
+        # term1: 2 * (-1 * (sin * cos))
+        # -sin(x)
+        neg_sin = UnaryOp(Op.SUB, FunctionCall("sin", [Variable("x")]))
+        # neg_sin * cos
+        prod1 = BinaryOp(neg_sin, Op.MUL, FunctionCall("cos", [Variable("x")]))
+        # 2 * prod1
+        term1 = BinaryOp(Number(2), Op.MUL, prod1)
+        
+        # term2: 2 * (cos * sin)
+        prod2 = BinaryOp(FunctionCall("cos", [Variable("x")]), Op.MUL, FunctionCall("sin", [Variable("x")]))
+        term2 = BinaryOp(Number(2), Op.MUL, prod2)
+        
+        node = BinaryOp(term1, Op.ADD, term2)
+        
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, Number)
+        self.assertEqual(simplified.value, 0)
+        
+    def test_negative_propagation(self):
+        # (-a) * b -> -(a * b)
+        node = BinaryOp(UnaryOp(Op.SUB, Variable("a")), Op.MUL, Variable("b"))
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, UnaryOp)
+        self.assertEqual(simplified.op, Op.SUB)
+        self.assertIsInstance(simplified.operand, BinaryOp)
+        self.assertEqual(simplified.operand.op, Op.MUL)
+        
+        # a * (-b) -> -(a * b)
+        node = BinaryOp(Variable("a"), Op.MUL, UnaryOp(Op.SUB, Variable("b")))
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, UnaryOp)
+        self.assertEqual(simplified.op, Op.SUB)
+
+        # (-a) * (-b) -> a * b
+        node = BinaryOp(UnaryOp(Op.SUB, Variable("a")), Op.MUL, UnaryOp(Op.SUB, Variable("b")))
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, BinaryOp)
+        self.assertEqual(simplified.op, Op.MUL)
+
 if __name__ == '__main__':
     unittest.main()
