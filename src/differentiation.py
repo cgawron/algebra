@@ -1,6 +1,11 @@
 from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op
+from .simplification import simplify
 
 def diff(node: ASTNode, var: str) -> ASTNode:
+    result = _diff(node, var)
+    return simplify(result)
+
+def _diff(node: ASTNode, var: str) -> ASTNode:
     if isinstance(node, Number):
         return Number(0)
     
