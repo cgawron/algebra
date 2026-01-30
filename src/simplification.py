@@ -341,6 +341,12 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             if isinstance(node.left, UnaryOp) and node.left.op == Op.SUB:
                  if are_terms_equal(node.left.operand, node.right):
                      return Number(-1)
+            
+            # Cancellation: (-a) / (-b) -> a / b
+            if isinstance(node.left, UnaryOp) and node.left.op == Op.SUB:
+                if isinstance(node.right, UnaryOp) and node.right.op == Op.SUB:
+                    # Both negative - cancel them out
+                    return simplify(BinaryOp(node.left.operand, Op.DIV, node.right.operand))
 
 
             
@@ -349,6 +355,23 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             if isinstance(node.left, Number) and isinstance(node.right, Number) and node.right.value != 0:
                  return Number(node.left.value / node.right.value)
              
+            # (c * x^a) / x^b -> c * x^(a-b) or c / x^(b-a)
+            if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL:
+                if isinstance(node.left.left, Number):
+                    c = node.left.left
+                    numerator_power_part = node.left.right
+                    b1, e1 = get_power(numerator_power_part)
+                    b2, e2 = get_power(node.right)
+                    if are_terms_equal(b1, b2):
+                        new_exp = e1 - e2
+                        if new_exp == 0:
+                            return c
+                        elif new_exp > 0:
+                            return simplify(BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, Number(new_exp))))
+                        else:
+                            # c / x^|new_exp|
+                            return simplify(BinaryOp(c, Op.DIV, BinaryOp(b1, Op.POW, Number(-new_exp))))
+            
             # Combine Powers: x^a / x^b -> x^(a-b)
             b1, e1 = get_power(node.left)
             b2, e2 = get_power(node.right)
@@ -373,6 +396,13 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                          e1 = node.left.right.value
                          e2 = node.right.value
                          return simplify(BinaryOp(b1, Op.POW, Number(e1 * e2)))
+                
+                # (-a)^(even) -> a^(even)
+                if isinstance(node.left, UnaryOp) and node.left.op == Op.SUB:
+                    exponent = node.right.value
+                    if exponent == int(exponent) and int(exponent) % 2 == 0:
+                        # Even exponent - remove the negative
+                        return simplify(BinaryOp(node.left.operand, Op.POW, node.right))
 
     elif isinstance(node, UnaryOp):
         operand_simplified = simplify(node.operand)
