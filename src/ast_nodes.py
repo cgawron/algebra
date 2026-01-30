@@ -66,22 +66,7 @@ class BinaryOp(ASTNode):
              # ADD and MUL are associative, so x+(y+z) can be x+y+z usually, 
              # but keeping strict parser structure (left-assoc) implies we might want to wrap right?
              # Parser: a+b+c -> (a+b)+c. Output: a+b+c.
-             # Parser: a+(b+c). Output: a+(b+c).
-             # So if right child has same op, and it's ADD/MUL, we technically don't need parens for value, 
-             # but for SUB/DIV we DO. 
-             # For ADD/MUL being explicit `a + (b + c)` is also fine.
-             # Let's enforce parens for right child if equal precedence for SUB and DIV.
-             # For ADD and MUL? 
-             # If I have x + (y + z). -> Right child matches. Wrap. `x + (y + z)`.
-             # If I have (x + y) + z. -> Left child matches. No wrap. `x + y + z`.
-             # This distinguishes the structure well.
-             
              if self.op in (Op.SUB, Op.DIV):
-                 right_str = f"({right_str})"
-             elif self.op in (Op.ADD, Op.MUL):
-                 # Optional: wrap right if same op? 
-                 # Let's assume standard formatting where a+b+c is Left associative.
-                 # So right associative tree `a+(b+c)` should have parens.
                  right_str = f"({right_str})"
 
         return f"{left_str} {self.op.value} {right_str}"
@@ -97,7 +82,13 @@ class UnaryOp(ASTNode):
         
     def __str__(self):
         operand_str = str(self.operand)
-        if self.operand.precedence < self.precedence:
+        should_wrap = self.operand.precedence < self.precedence
+        
+        # Don't wrap MUL/DIV under Unary as they correspond to equivalent value (-a*b vs -(a*b))
+        if isinstance(self.operand, BinaryOp) and self.operand.op in (Op.MUL, Op.DIV):
+             should_wrap = False
+             
+        if should_wrap:
             operand_str = f"({operand_str})"
         return f"{self.op.value}{operand_str}"
 
