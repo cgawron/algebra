@@ -134,5 +134,56 @@ class TestSimplification(unittest.TestCase):
         self.assertIsInstance(simplified, BinaryOp)
         self.assertEqual(simplified.op, Op.MUL)
 
+    def test_pythagorean_identity(self):
+        # sin(x)^2 + cos(x)^2 -> 1
+        term1 = BinaryOp(FunctionCall("sin", [Variable("x")]), Op.POW, Number(2))
+        term2 = BinaryOp(FunctionCall("cos", [Variable("x")]), Op.POW, Number(2))
+        node = BinaryOp(term1, Op.ADD, term2)
+        
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, Number)
+        self.assertEqual(simplified.value, 1)
+
+    def test_double_angle_identity(self):
+        # cos(x)^2 - sin(x)^2 -> cos(2x)
+        # 1 * cos^2 + (-1) * sin^2
+        term1 = BinaryOp(FunctionCall("cos", [Variable("x")]), Op.POW, Number(2))
+        term2 = UnaryOp(Op.SUB, BinaryOp(FunctionCall("sin", [Variable("x")]), Op.POW, Number(2)))
+        # Or BinaryOp(cos^2, ADD, Unary(SUB, sin^2))
+        # Simplify handles ADD.
+        # But parser produces SUB(cos^2, sin^2).
+        # My simplify handles SUB?
+        # Let's test ADD(cos^2, Unary(SUB, sin^2)).
+        # As well as SUB(cos^2, sin^2).
+        
+        # Case 1: SUB node
+        node = BinaryOp(term1, Op.SUB, BinaryOp(FunctionCall("sin", [Variable("x")]), Op.POW, Number(2)))
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, FunctionCall)
+        self.assertEqual(simplified.name, "cos")
+        # Arg 2x
+        self.assertIsInstance(simplified.args[0], BinaryOp)
+        self.assertEqual(simplified.args[0].left.value, 2)
+        
+    def test_double_angle_identity_canonical(self):
+        # -sin(x)^2 + cos(x)^2 -> cos(2x)
+        # This is ADD(Unary(SUB, sin^2), cos^2).
+        # Canonical order: cos^2 (Term) vs sin^2 (Term).
+        # sin^2 is UnaryOp? No, -sin^2 is UnaryOp.
+        # cos^2 is BinaryOp.
+        # Rank: UnaryOp (2) < BinaryOp (3).
+        # So -sin^2 comes first.
+        # left = -sin^2, right = cos^2.
+        # c1 = -1, c2 = 1.
+        # Pattern match: c1 = -c2.
+        # Check args.
+        term1 = UnaryOp(Op.SUB, BinaryOp(FunctionCall("sin", [Variable("x")]), Op.POW, Number(2)))
+        term2 = BinaryOp(FunctionCall("cos", [Variable("x")]), Op.POW, Number(2))
+        node = BinaryOp(term1, Op.ADD, term2)
+        
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, FunctionCall)
+        self.assertEqual(simplified.name, "cos")
+
 if __name__ == '__main__':
     unittest.main()

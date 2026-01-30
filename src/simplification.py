@@ -1,5 +1,5 @@
 from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op
-from typing import Tuple
+from typing import Tuple, Optional
 
 def get_rank(node: ASTNode) -> int:
     """
@@ -47,6 +47,25 @@ def get_power(node: ASTNode) -> Tuple[ASTNode, float]:
             return (node.left, node.right.value)
     return (node, 1)
 
+def get_trig_arg(node: ASTNode, func_name: str, target_exponent: float) -> Optional[ASTNode]:
+    """
+    Checks if node is func_name(arg) ^ target_exponent.
+    Returns arg if match, None otherwise.
+    """
+    # Check for direct function call if exponent is 1
+    if target_exponent == 1:
+        if isinstance(node, FunctionCall) and node.name == func_name and len(node.args) == 1:
+            return node.args[0]
+        return None
+
+    # Check for Power
+    if isinstance(node, BinaryOp) and node.op == Op.POW:
+        if isinstance(node.right, Number) and node.right.value == target_exponent:
+            base = node.left
+            if isinstance(base, FunctionCall) and base.name == func_name and len(base.args) == 1:
+                return base.args[0]
+    return None
+
 def are_terms_equal(term1: ASTNode, term2: ASTNode) -> bool:
     """Check if two terms are identical (structurally)."""
     return str(term1) == str(term2) # Simple string comparison for now as canonical order should make them consistent.
@@ -89,6 +108,41 @@ def simplify(node: ASTNode) -> ASTNode:
                 if new_coeff == 1: return t1
                 return simplify(BinaryOp(Number(new_coeff), Op.MUL, t1))
             
+            # Trigonometric Identities
+            # sin(u)^2 + cos(u)^2 = 1
+            # We need to handle c * sin^2 + c * cos^2 -> c * 1 -> c
+            # Only if coefficients match.
+            if c1 == c2:
+                sin_arg = get_trig_arg(t1, "sin", 2)
+                cos_arg = get_trig_arg(t2, "cos", 2)
+                if sin_arg and cos_arg and are_terms_equal(sin_arg, cos_arg):
+                     # c * (sin^2 + cos^2) -> c * 1 -> c
+                     return Number(c1)
+                
+                # Check reverse order (cos^2 + sin^2) - dealt with by canonical order?
+                # Canonical: cos (4) vs sin (4). "cos" < "sin". So cos usually first.
+                # So we should check t1=cos, t2=sin too.
+                sin_arg_r = get_trig_arg(t2, "sin", 2)
+                cos_arg_l = get_trig_arg(t1, "cos", 2)
+                if sin_arg_r and cos_arg_l and are_terms_equal(sin_arg_r, cos_arg_l):
+                     return Number(c1)
+            
+            # Double Angle Cosine: cos(u)^2 - sin(u)^2 = cos(2u)
+            if c1 == -c2:
+                # Case 1: t1=cos^2, t2=sin^2 -> c1 * (cos^2 - sin^2)
+                cos_arg = get_trig_arg(t1, "cos", 2)
+                sin_arg = get_trig_arg(t2, "sin", 2)
+                if cos_arg and sin_arg and are_terms_equal(cos_arg, sin_arg):
+                     double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg))
+                     return simplify(BinaryOp(Number(c1), Op.MUL, FunctionCall("cos", [double_arg])))
+                
+                # Case 2: t1=sin^2, t2=cos^2 -> c2 * (cos^2 - sin^2)
+                sin_arg_l = get_trig_arg(t1, "sin", 2)
+                cos_arg_r = get_trig_arg(t2, "cos", 2)
+                if sin_arg_l and cos_arg_r and are_terms_equal(sin_arg_l, cos_arg_r):
+                     double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg_r))
+                     return simplify(BinaryOp(Number(c2), Op.MUL, FunctionCall("cos", [double_arg])))
+
             # Associative Constant Folding
             if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
                  if isinstance(node.right.left, Number):
@@ -112,6 +166,24 @@ def simplify(node: ASTNode) -> ASTNode:
                 if new_coeff == 0: return Number(0)
                 if new_coeff == 1: return t1
                 return simplify(BinaryOp(Number(new_coeff), Op.MUL, t1))
+            
+            # Trig Identities for Subtraction?
+            # cos^2 - sin^2.
+            # If canonical ordering is Off, we might see this in SUB.
+            # But simplify(SUB) is usually kept unless we convert SUB to ADD(-)?
+            # My parser creates SUB.
+            # cos^2 - sin^2 matches here.
+            # c1=1, t1=cos^2. c2=1, t2=sin^2. (get_term handles coeff 1).
+            cos_arg = get_trig_arg(t1, "cos", 2)
+            sin_arg = get_trig_arg(t2, "sin", 2)
+            if cos_arg and sin_arg and are_terms_equal(cos_arg, sin_arg):
+                 if c1 == c2:
+                      # c * (cos^2 - sin^2) -> c * cos(2u)
+                      double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg))
+                      result = FunctionCall("cos", [double_arg])
+                      if c1 == 1: return result
+                      return simplify(BinaryOp(Number(c1), Op.MUL, result))
+
 
         # Multiplication Rules
         if node.op == Op.MUL:
