@@ -96,3 +96,8 @@ class Parser:
 
     def parse(self) -> ASTNode:
         return self.expr()
+
+def parse_expression(text: str) -> ASTNode:
+    lexer = Lexer(text)
+    parser = Parser(lexer)
+    return parser.parse()

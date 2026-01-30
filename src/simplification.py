@@ -194,6 +194,25 @@ def simplify(node: ASTNode) -> ASTNode:
             if isinstance(node.left, Number) and isinstance(node.right, Number):
                 return Number(node.left.value * node.right.value)
             
+            # Constant Combination: c * (x / d) -> (c/d) * x
+            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
+                if isinstance(node.right.right, Number) and node.right.right.value != 0:
+                     new_val = node.left.value / node.right.right.value
+                     return simplify(BinaryOp(Number(new_val), Op.MUL, node.right.left))
+
+
+            
+
+
+            # Cancellation: (c * x) / x -> c
+            if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL:
+                 if are_terms_equal(node.left.right, node.right) and isinstance(node.left.left, Number): # (c*x) / x
+                     return node.left.left
+                 if are_terms_equal(node.left.left, node.right) and isinstance(node.left.right, Number): # (x*c) / x
+                     return node.left.right
+            
+
+            
             # Pull constant from right child: x * (c * y) -> c * (x * y)
             if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL and isinstance(node.right.left, Number):
                  c = node.right.left
@@ -232,15 +251,30 @@ def simplify(node: ASTNode) -> ASTNode:
 
         # Division Rules
         if node.op == Op.DIV:
-             if isinstance(node.right, Number) and node.right.value == 1:
+            # 0 / x -> 0
+            if isinstance(node.left, Number) and node.left.value == 0:
+                 if isinstance(node.right, Number) and node.right.value == 0:
+                      raise ValueError("Division by zero")
+                 return Number(0)
+
+            # Cancellation: x / (c * x) -> 1/c
+            if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
+                 if are_terms_equal(node.left, node.right.right) and isinstance(node.right.left, Number): # x / (c*x)
+                     return simplify(BinaryOp(Number(1), Op.DIV, node.right.left))
+                 if are_terms_equal(node.left, node.right.left) and isinstance(node.right.right, Number): # x / (x*c)
+                     return simplify(BinaryOp(Number(1), Op.DIV, node.right.right))
+
+
+            
+            if isinstance(node.right, Number) and node.right.value == 1:
                  return node.left
-             if isinstance(node.left, Number) and isinstance(node.right, Number) and node.right.value != 0:
+            if isinstance(node.left, Number) and isinstance(node.right, Number) and node.right.value != 0:
                  return Number(node.left.value / node.right.value)
              
-             # Combine Powers: x^a / x^b -> x^(a-b)
-             b1, e1 = get_power(node.left)
-             b2, e2 = get_power(node.right)
-             if are_terms_equal(b1, b2):
+            # Combine Powers: x^a / x^b -> x^(a-b)
+            b1, e1 = get_power(node.left)
+            b2, e2 = get_power(node.right)
+            if are_terms_equal(b1, b2):
                  new_exp = e1 - e2
                  if new_exp == 0: return Number(1)
                  if new_exp == 1: return b1

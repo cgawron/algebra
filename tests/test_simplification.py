@@ -167,16 +167,6 @@ class TestSimplification(unittest.TestCase):
         
     def test_double_angle_identity_canonical(self):
         # -sin(x)^2 + cos(x)^2 -> cos(2x)
-        # This is ADD(Unary(SUB, sin^2), cos^2).
-        # Canonical order: cos^2 (Term) vs sin^2 (Term).
-        # sin^2 is UnaryOp? No, -sin^2 is UnaryOp.
-        # cos^2 is BinaryOp.
-        # Rank: UnaryOp (2) < BinaryOp (3).
-        # So -sin^2 comes first.
-        # left = -sin^2, right = cos^2.
-        # c1 = -1, c2 = 1.
-        # Pattern match: c1 = -c2.
-        # Check args.
         term1 = UnaryOp(Op.SUB, BinaryOp(FunctionCall("sin", [Variable("x")]), Op.POW, Number(2)))
         term2 = BinaryOp(FunctionCall("cos", [Variable("x")]), Op.POW, Number(2))
         node = BinaryOp(term1, Op.ADD, term2)
@@ -184,6 +174,20 @@ class TestSimplification(unittest.TestCase):
         simplified = simplify(node)
         self.assertIsInstance(simplified, FunctionCall)
         self.assertEqual(simplified.name, "cos")
+
+    def test_division_combination(self):
+        # 2 * (x / 4) -> 0.5 * x
+        node = BinaryOp(Number(2), Op.MUL, BinaryOp(Variable("x"), Op.DIV, Number(4)))
+        simplified = simplify(node)
+        self.assertEqual(simplified.op, Op.MUL)
+        self.assertEqual(simplified.left.value, 0.5)
+        self.assertEqual(simplified.right.name, "x")
+        
+        # 2 * (x / 2) -> 1 * x -> x
+        node = BinaryOp(Number(2), Op.MUL, BinaryOp(Variable("x"), Op.DIV, Number(2)))
+        simplified = simplify(node)
+        self.assertIsInstance(simplified, Variable)
+        self.assertEqual(simplified.name, "x")
 
 if __name__ == '__main__':
     unittest.main()
