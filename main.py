@@ -10,6 +10,8 @@ def parse_expression(text: str):
 def main():
     expressions = [
         "x + 1",
+        "x + x",
+        "x * x * x",
         "sin(30 * x)",
         "exp(x^2 + 1)",
         "ln(x^2 + 1)"

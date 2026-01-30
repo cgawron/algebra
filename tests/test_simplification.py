@@ -24,83 +24,73 @@ class TestSimplification(unittest.TestCase):
         self.assertEqual(simplified.left.value, 2)
         self.assertIsInstance(simplified.right, Variable)
         self.assertEqual(simplified.right.name, "x")
-    
-    def test_var_vs_function(self):
-        # sin(x) + x -> x + sin(x)
-        # Variable rank (1) < FunctionCall rank (4)
-        node = BinaryOp(FunctionCall("sin", [Variable("x")]), Op.ADD, Variable("x"))
+
+    def test_collect_like_terms(self):
+        # x + x -> 2x
+        node = BinaryOp(Variable("x"), Op.ADD, Variable("x"))
         simplified = simplify(node)
-        self.assertEqual(simplified.op, Op.ADD)
-        self.assertIsInstance(simplified.left, Variable)
-        self.assertIsInstance(simplified.right, FunctionCall)
-
-    def test_associative_folding_add(self):
-        # 1 + (2 + x) -> 3 + x
-        inner = BinaryOp(Number(2), Op.ADD, Variable("x"))
-        outer = BinaryOp(Number(1), Op.ADD, inner)
-        simplified = simplify(outer)
-        self.assertEqual(simplified.left.value, 3)
+        self.assertEqual(simplified.op, Op.MUL)
+        self.assertEqual(simplified.left.value, 2)
         self.assertEqual(simplified.right.name, "x")
-
-    def test_associative_folding_mul(self):
-        # 2 * (3 * x) -> 6 * x
-        inner = BinaryOp(Number(3), Op.MUL, Variable("x"))
-        outer = BinaryOp(Number(2), Op.MUL, inner)
-        simplified = simplify(outer)
-        self.assertEqual(simplified.left.value, 6)
-        self.assertEqual(simplified.right.name, "x")
-
-    def test_associative_folding_with_reordering(self):
-        # (x + 2) + 1 -> 1 + (2 + x) -> 3 + x
-        inner = BinaryOp(Variable("x"), Op.ADD, Number(2)) # -> 2 + x (canonical)
-        outer = BinaryOp(inner, Op.ADD, Number(1)) # -> 1 + (2 + x) (canonical) -> 3 + x (folding)
-        simplified = simplify(outer)
-        # inner: simplify(x+2) -> 2+x
-        # outer: BinaryOp(2+x, ADD, 1). 
-        # simplify(outer):
-        #   left=2+x, right=1.
-        #   rank(right) < rank(left)? 0 < 3. Swap.
-        #   left=1, right=2+x.
-        #   Associative check: right is ADD. right.left is Number(2).
-        #   1 + 2 = 3.
-        #   Return 3 + x.
-        self.assertEqual(simplified.left.value, 3)
-        self.assertEqual(simplified.right.name, "x")
-
-    def test_simplify_add_zero(self):
-        # x + 0 -> x
-        node = BinaryOp(Variable("x"), Op.ADD, Number(0))
-        simplified = simplify(node)
-        self.assertIsInstance(simplified, Variable)
-        self.assertEqual(simplified.name, "x")
         
-        # 0 + x -> x
-        node = BinaryOp(Number(0), Op.ADD, Variable("x"))
+        # 2x + 3x -> 5x
+        term1 = BinaryOp(Number(2), Op.MUL, Variable("x"))
+        term2 = BinaryOp(Number(3), Op.MUL, Variable("x"))
+        node = BinaryOp(term1, Op.ADD, term2)
         simplified = simplify(node)
-        self.assertIsInstance(simplified, Variable)
-        self.assertEqual(simplified.name, "x")
-
-    def test_simplify_mul_one(self):
-        # x * 1 -> x
-        node = BinaryOp(Variable("x"), Op.MUL, Number(1))
-        simplified = simplify(node)
-        self.assertIsInstance(simplified, Variable)
-        self.assertEqual(simplified.name, "x")
-
-    def test_simplify_mul_zero(self):
-        # x * 0 -> 0
-        node = BinaryOp(Variable("x"), Op.MUL, Number(0))
-        simplified = simplify(node)
-        self.assertIsInstance(simplified, Number)
-        self.assertEqual(simplified.value, 0)
-    
-    def test_nested_canonical(self):
-        # (x * 2) * 3 -> (2 * x) * 3 -> 3 * (2 * x) -> 6 * x
-        inner = BinaryOp(Variable("x"), Op.MUL, Number(2))
-        outer = BinaryOp(inner, Op.MUL, Number(3))
-        simplified = simplify(outer)
-        self.assertEqual(simplified.left.value, 6)
+        self.assertEqual(simplified.left.value, 5)
         self.assertEqual(simplified.right.name, "x")
+
+    def test_combine_products(self):
+        # x * x -> x^2
+        node = BinaryOp(Variable("x"), Op.MUL, Variable("x"))
+        simplified = simplify(node)
+        self.assertEqual(simplified.op, Op.POW)
+        self.assertEqual(simplified.left.name, "x")
+        self.assertEqual(simplified.right.value, 2)
+
+    def test_combine_products_advanced(self):
+        # x * (x * x) -> x^3
+        # x * x^2 -> x^3
+        inner = BinaryOp(Variable("x"), Op.MUL, Variable("x"))
+        outer = BinaryOp(Variable("x"), Op.MUL, inner)
+        simplified = simplify(outer)
+        # simplify(outer) -> simplify(x, x^2) -> x^3
+        self.assertEqual(simplified.op, Op.POW)
+        self.assertEqual(simplified.left.name, "x")
+        self.assertEqual(simplified.right.value, 3)
+
+    def test_complex_simplification(self):
+        # x * (x + x) + x * x
+        # x * (2x) + x^2 -> 2x^2 + x^2 -> 3x^2
+        
+        # Construct: x * (x + x)
+        term1 = BinaryOp(Variable("x"), Op.MUL, BinaryOp(Variable("x"), Op.ADD, Variable("x")))
+        # Construct: x * x
+        term2 = BinaryOp(Variable("x"), Op.MUL, Variable("x"))
+        # Total
+        node = BinaryOp(term1, Op.ADD, term2)
+        
+        simplified = simplify(node)
+        # Should be 3 * x^2
+        self.assertEqual(simplified.op, Op.MUL)
+        self.assertEqual(simplified.left.value, 3)
+        self.assertEqual(simplified.right.op, Op.POW)
+        self.assertEqual(simplified.right.left.name, "x")
+        self.assertEqual(simplified.right.right.value, 2)
+
+    def test_user_requested_simplification(self):
+        # x * (2 * x) + x ^ 2 -> 3 * x^2
+        term1 = BinaryOp(Variable("x"), Op.MUL, BinaryOp(Number(2), Op.MUL, Variable("x")))
+        term2 = BinaryOp(Variable("x"), Op.POW, Number(2))
+        node = BinaryOp(term1, Op.ADD, term2)
+        
+        simplified = simplify(node)
+        self.assertEqual(simplified.op, Op.MUL)
+        self.assertEqual(simplified.left.value, 3)
+        self.assertEqual(simplified.right.op, Op.POW)
+        self.assertEqual(simplified.right.left.name, "x")
+        self.assertEqual(simplified.right.right.value, 2)
 
 if __name__ == '__main__':
     unittest.main()

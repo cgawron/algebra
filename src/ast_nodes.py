@@ -22,7 +22,7 @@ class ASTNode:
 class Number(ASTNode):
     value: float
     def __str__(self):
-        if self.value.is_integer():
+        if isinstance(self.value, float) and self.value.is_integer():
              return str(int(self.value))
         return str(self.value)
 
