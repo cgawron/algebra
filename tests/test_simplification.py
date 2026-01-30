@@ -79,7 +79,19 @@ class TestSimplification(unittest.TestCase):
         self.assertEqual(simplified.right.left.name, "x")
         self.assertEqual(simplified.right.right.value, 2)
 
-    def test_user_requested_simplification(self):
+    def test_shared_reference_multiplication(self):
+        """Test that (3*x^2)*x^2 with shared x^2 reference simplifies correctly to 3*x^4"""
+        x = Variable("x")
+        x2 = BinaryOp(x, Op.POW, Number(2))
+        
+        # Create (3 * x^2) * x^2 where x^2 is the SAME object in both places
+        left_part = BinaryOp(Number(3), Op.MUL, x2)
+        expr = BinaryOp(left_part, Op.MUL, x2)
+        
+        simplified = simplify(expr)
+        
+        # Should be 3 * x^4
+        self.assertEqual(str(simplified), "3 * x ^ 4")
         # x * (2 * x) + x ^ 2 -> 3 * x^2
         term1 = BinaryOp(Variable("x"), Op.MUL, BinaryOp(Number(2), Op.MUL, Variable("x")))
         term2 = BinaryOp(Variable("x"), Op.POW, Number(2))

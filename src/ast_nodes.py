@@ -9,7 +9,7 @@ class Op(Enum):
     DIV = "/"
     POW = "^"
 
-@dataclass
+@dataclass(frozen=True)
 class ASTNode:
     def __str__(self):
         return self.__repr__()
@@ -18,7 +18,7 @@ class ASTNode:
     def precedence(self):
         return 100
 
-@dataclass
+@dataclass(frozen=True)
 class Number(ASTNode):
     value: float
     def __str__(self):
@@ -26,13 +26,13 @@ class Number(ASTNode):
              return str(int(self.value))
         return str(self.value)
 
-@dataclass
+@dataclass(frozen=True)
 class Variable(ASTNode):
     name: str
     def __str__(self):
         return self.name
 
-@dataclass
+@dataclass(frozen=True)
 class BinaryOp(ASTNode):
     left: ASTNode
     op: Op
@@ -71,7 +71,7 @@ class BinaryOp(ASTNode):
 
         return f"{left_str} {self.op.value} {right_str}"
 
-@dataclass
+@dataclass(frozen=True)
 class UnaryOp(ASTNode):
     op: Op
     operand: ASTNode
@@ -92,7 +92,7 @@ class UnaryOp(ASTNode):
             operand_str = f"({operand_str})"
         return f"{self.op.value}{operand_str}"
 
-@dataclass
+@dataclass(frozen=True)
 class FunctionCall(ASTNode):
     name: str
     args: List[ASTNode]

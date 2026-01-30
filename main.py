@@ -17,7 +17,8 @@ def main():
         "sin(x) * cos(x) * 2",
         "cos(2*x)",
         "cos(x)^2 - sin(x)^2",
-        "2*x / (x^2 + 1)"
+        "2*x / (x^2 + 1)",
+        "(-x^2)/(-x^3)"
     ]
     
     for expr in expressions:

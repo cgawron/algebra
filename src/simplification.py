@@ -87,11 +87,34 @@ def extract_negative(node: ASTNode) -> Optional[ASTNode]:
              return BinaryOp(Number(-node.left.value), Op.MUL, node.right)
     return None
 
-def simplify(node: ASTNode) -> ASTNode:
+def _apply_rule(rule_name: str, result: ASTNode, original: ASTNode, depth: int) -> ASTNode:
+    """Helper to log rule application and recursively simplify the result."""
+    import os
+    debug = os.environ.get('DEBUG_SIMPLIFY', '0') == '1'
+    if debug:
+        indent = "  " * depth
+        print(f"{indent}  [RULE: {rule_name}] {original} → {result}")
+    return simplify(result, depth)
+
+def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
+    import os
+    debug = os.environ.get('DEBUG_SIMPLIFY', '0') == '1'
+    indent = "  " * _depth
+    
+    if debug:
+        print(f"{indent}→ simplify({node})")
+    
+    original_node = node
+    
     if isinstance(node, BinaryOp):
-        # Simplify children first (bottom-up)
-        node.left = simplify(node.left)
-        node.right = simplify(node.right)
+        # Simplify children first (bottom-up) - create new node to avoid mutation
+        left_simplified = simplify(node.left, _depth + 1)
+        right_simplified = simplify(node.right, _depth + 1)
+        # Create new node instead of mutating
+        node = BinaryOp(left_simplified, node.op, right_simplified)
+        
+        if debug:
+            print(f"{indent}  After simplifying children: {node}")
         
         # 1. Canonical Ordering for Commutative Operations
         if node.op in (Op.ADD, Op.MUL):
@@ -99,10 +122,10 @@ def simplify(node: ASTNode) -> ASTNode:
              rank_right = get_rank(node.right)
              
              if rank_right < rank_left:
-                 node.left, node.right = node.right, node.left
+                 node = BinaryOp(node.right, node.op, node.left)
              elif rank_right == rank_left:
                  if str(node.right) < str(node.left):
-                      node.left, node.right = node.right, node.left
+                      node = BinaryOp(node.right, node.op, node.left)
         
         # 2. Simplification Rules
         
@@ -257,19 +280,6 @@ def simplify(node: ASTNode) -> ASTNode:
                  new_left = simplify(BinaryOp(c, Op.MUL, a))
                  new_right = simplify(BinaryOp(c, Op.MUL, b))
                  return simplify(BinaryOp(new_left, Op.SUB, new_right))
-
-
-            
-
-
-            # Cancellation: (c * x) / x -> c
-            if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL:
-                 if are_terms_equal(node.left.right, node.right) and isinstance(node.left.left, Number): # (c*x) / x
-                     return node.left.left
-                 if are_terms_equal(node.left.left, node.right) and isinstance(node.left.right, Number): # (x*c) / x
-                     return node.left.right
-            
-
             
             # Pull constant from right child: x * (c * y) -> c * (x * y)
             if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL and isinstance(node.right.left, Number):
@@ -365,7 +375,8 @@ def simplify(node: ASTNode) -> ASTNode:
                          return simplify(BinaryOp(b1, Op.POW, Number(e1 * e2)))
 
     elif isinstance(node, UnaryOp):
-        node.operand = simplify(node.operand)
+        operand_simplified = simplify(node.operand)
+        node = UnaryOp(node.op, operand_simplified)
         if isinstance(node.operand, Number):
             if node.op == Op.ADD: return node.operand
             if node.op == Op.SUB: return Number(-node.operand.value)
@@ -375,6 +386,8 @@ def simplify(node: ASTNode) -> ASTNode:
     
     elif isinstance(node, FunctionCall):
         new_args = [simplify(arg) for arg in node.args]
-        node.args = new_args
+        node = FunctionCall(node.name, new_args)
 
+    if debug:
+        print(f"{indent}← {node}")
     return node
