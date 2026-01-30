@@ -189,5 +189,80 @@ class TestSimplification(unittest.TestCase):
         self.assertIsInstance(simplified, Variable)
         self.assertEqual(simplified.name, "x")
 
+    def test_distribution_add(self):
+        # 2 * (x + 1) -> 2x + 2
+        # Note: 2x + 2 might be simplified further or just (2x + 2) depending on canonical ordering.
+        # 1: 2*x + 2*1 -> 2x + 2.
+        # Canonical: Number(2) vs BinaryOp(2x). Number is rank 0. BinaryOp is rank 3.
+        # So 2 + 2x.
+        
+        node = BinaryOp(Number(2), Op.MUL, BinaryOp(Variable("x"), Op.ADD, Number(1)))
+        simplified = simplify(node)
+        
+        self.assertEqual(simplified.op, Op.ADD)
+        # Check canonical order: 2 + 2x
+        self.assertIsInstance(simplified.left, Number)
+        self.assertEqual(simplified.left.value, 2)
+        self.assertEqual(simplified.right.op, Op.MUL)
+        self.assertEqual(simplified.right.left.value, 2)
+        self.assertEqual(simplified.right.right.name, "x")
+
+    def test_distribution_sub(self):
+        # 2 * (x - 1) -> 2x - 2
+        
+        node = BinaryOp(Number(2), Op.MUL, BinaryOp(Variable("x"), Op.SUB, Number(1)))
+        simplified = simplify(node)
+        
+        self.assertEqual(simplified.op, Op.SUB)
+        # 2x - 2
+        self.assertEqual(simplified.left.op, Op.MUL)
+        self.assertEqual(simplified.left.left.value, 2)
+        self.assertEqual(simplified.right.value, 2)
+
+    def test_associativity_sub(self):
+        # (x + 2x^2) - 4x^2 -> x + (2x^2 - 4x^2) -> x - 2x^2
+        
+        term_x = Variable("x")
+        term_2x2 = BinaryOp(Number(2), Op.MUL, BinaryOp(Variable("x"), Op.POW, Number(2)))
+        term_4x2 = BinaryOp(Number(4), Op.MUL, BinaryOp(Variable("x"), Op.POW, Number(2)))
+        
+        # (x + 2x^2)
+        sum_term = BinaryOp(term_x, Op.ADD, term_2x2)
+        
+        # (x + 2x^2) - 4x^2
+        node = BinaryOp(sum_term, Op.SUB, term_4x2)
+        
+        simplified = simplify(node)
+        
+        # Expected: x + (-2x^2)  OR  x - 2x^2 depending on how -2x^2 is represented.
+        # simplify(2x^2 - 4x^2) -> -2x^2 (BinaryOp(-2, MUL, x^2)) OR UnaryOp(SUB, 2x^2)?
+        # 2x^2 - 4x^2 uses subtraction rule "Combine Like Terms".
+        # c1=2, c2=4. new_coeff = -2. 
+        # Returns BinaryOp(-2, MUL, x^2).
+        
+        # So we expect A + (-2x^2).
+        # But wait, A + B. Does A+B simplify A=x, B=-2x^2? No like terms.
+        # So BinaryOp(x, ADD, BinaryOp(-2, MUL, x^2))
+        
+        self.assertEqual(simplified.op, Op.ADD)
+        self.assertEqual(simplified.left.name, "x")
+        self.assertEqual(simplified.right.op, Op.MUL)
+        self.assertEqual(simplified.right.left.value, -2)
+
+    def test_reported_issue_logic(self):
+        # 2 * (1 + x^2) - 4x^2 -> 2 - 2x^2
+        
+        t1 = BinaryOp(Number(2), Op.MUL, BinaryOp(Number(1), Op.ADD, BinaryOp(Variable("x"), Op.POW, Number(2))))
+        t2 = BinaryOp(Number(4), Op.MUL, BinaryOp(Variable("x"), Op.POW, Number(2)))
+        node = BinaryOp(t1, Op.SUB, t2)
+        
+        simplified = simplify(node)
+        
+        # 2 + (-2x^2)
+        self.assertEqual(simplified.op, Op.ADD)
+        self.assertEqual(simplified.left.value, 2)
+        self.assertEqual(simplified.right.op, Op.MUL)
+        self.assertEqual(simplified.right.left.value, -2)
+
 if __name__ == '__main__':
     unittest.main()

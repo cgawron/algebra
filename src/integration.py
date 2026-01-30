@@ -190,6 +190,27 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
             # int(f / c) -> (1/c) * int(f)
             if is_constant(node.right, var):
                 return BinaryOp(_integrate(node.left, var), Op.DIV, node.right)
+            
+            # Quotient Rule: int(u' / u) -> ln(u)
+            # node.left = numerator (potential u' or k*u')
+            # node.right = denominator (u)
+            
+            u = node.right
+            target_du = simplify(diff(u, var))
+            
+            # If du is 0, u is constant, handled by is_constant above or caught here
+            if isinstance(target_du, Number) and target_du.value == 0:
+                 pass # Division by constant handled above
+            else:
+                 potential_du = node.left
+                 ratio = simplify(BinaryOp(potential_du, Op.DIV, target_du))
+                 
+                 if is_constant(ratio, var):
+                     # int(k * du / u) = k * ln(u)
+                     k = ratio
+                     ln_u = FunctionCall("ln", [u])
+                     return simplify(BinaryOp(k, Op.MUL, ln_u))
+
             raise NotImplementedError(f"Integration of division '{node}' not implemented.")
 
         if node.op == Op.POW:

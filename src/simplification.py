@@ -184,6 +184,16 @@ def simplify(node: ASTNode) -> ASTNode:
                       if c1 == 1: return result
                       return simplify(BinaryOp(Number(c1), Op.MUL, result))
 
+            # Associativity: (A + B) - C -> A + (B - C)
+            # This allows combining terms like (x + 2x^2) - 4x^2 -> x + (2x^2 - 4x^2)
+            if isinstance(node.left, BinaryOp) and node.left.op == Op.ADD:
+                 A = node.left.left
+                 B = node.left.right
+                 C = node.right
+                 # Attempt to simplify B - C
+                 new_sub = simplify(BinaryOp(B, Op.SUB, C))
+                 return simplify(BinaryOp(A, Op.ADD, new_sub))
+
 
         # Multiplication Rules
         if node.op == Op.MUL:
@@ -194,11 +204,37 @@ def simplify(node: ASTNode) -> ASTNode:
             if isinstance(node.left, Number) and isinstance(node.right, Number):
                 return Number(node.left.value * node.right.value)
             
+            # Associative Constant Folding: c1 * (c2 * x) -> (c1 * c2) * x
+            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
+                 if isinstance(node.right.left, Number):
+                      new_value = node.left.value * node.right.left.value
+                      return simplify(BinaryOp(Number(new_value), Op.MUL, node.right.right))
+            
             # Constant Combination: c * (x / d) -> (c/d) * x
             if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
                 if isinstance(node.right.right, Number) and node.right.right.value != 0:
                      new_val = node.left.value / node.right.right.value
                      return simplify(BinaryOp(Number(new_val), Op.MUL, node.right.left))
+
+            # Distribute Constant: c * (a + b) -> c*a + c*b
+            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
+                 # c * (a + b)
+                 c = node.left
+                 a = node.right.left
+                 b = node.right.right
+                 new_left = simplify(BinaryOp(c, Op.MUL, a))
+                 new_right = simplify(BinaryOp(c, Op.MUL, b))
+                 return simplify(BinaryOp(new_left, Op.ADD, new_right))
+            
+            # Distribute Constant: c * (a - b) -> c*a - c*b
+            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.SUB:
+                 # c * (a - b)
+                 c = node.left
+                 a = node.right.left
+                 b = node.right.right
+                 new_left = simplify(BinaryOp(c, Op.MUL, a))
+                 new_right = simplify(BinaryOp(c, Op.MUL, b))
+                 return simplify(BinaryOp(new_left, Op.SUB, new_right))
 
 
             
@@ -263,6 +299,16 @@ def simplify(node: ASTNode) -> ASTNode:
                      return simplify(BinaryOp(Number(1), Op.DIV, node.right.left))
                  if are_terms_equal(node.left, node.right.left) and isinstance(node.right.right, Number): # x / (x*c)
                      return simplify(BinaryOp(Number(1), Op.DIV, node.right.right))
+
+            # Cancellation: x / -x -> -1
+            if isinstance(node.right, UnaryOp) and node.right.op == Op.SUB:
+                 if are_terms_equal(node.left, node.right.operand):
+                     return Number(-1)
+            
+            # Cancellation: -x / x -> -1
+            if isinstance(node.left, UnaryOp) and node.left.op == Op.SUB:
+                 if are_terms_equal(node.left.operand, node.right):
+                     return Number(-1)
 
 
             
