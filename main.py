@@ -1,7 +1,8 @@
 from src.lexer import Lexer
 from src.parser import Parser
+from src.differentiation import diff
 
-def parse_expression(text: str):
+def parse_expression(text: str):    
     lexer = Lexer(text)
     parser = Parser(lexer)
     return parser.parse()
@@ -9,12 +10,8 @@ def parse_expression(text: str):
 def main():
     expressions = [
         "x + 1",
-        "3 * (x + 5)",
-        "-5 + 2",
-        "10 / 2 * 3",
-        "sin(30)",
-        "max(1, 2, 3)",
-        "sin(max(2, 3))"
+        "sin(30 * x)",
+        "exp(x^2 + 1)"
     ]
     
     for expr in expressions:
@@ -22,6 +19,7 @@ def main():
             ast = parse_expression(expr)
             print(f"Expression: {expr}")
             print(f"AST: {ast}")
+            print(f"Derivative: {diff(ast, 'x')}")
         except Exception as e:
             print(f"Error parsing '{expr}': {e}")
 
