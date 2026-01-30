@@ -242,12 +242,11 @@ class TestSimplification(unittest.TestCase):
         
         # So we expect A + (-2x^2).
         # But wait, A + B. Does A+B simplify A=x, B=-2x^2? No like terms.
-        # So BinaryOp(x, ADD, BinaryOp(-2, MUL, x^2))
-        
-        self.assertEqual(simplified.op, Op.ADD)
+        # Expected: x - 2x^2
+        self.assertEqual(simplified.op, Op.SUB)
         self.assertEqual(simplified.left.name, "x")
         self.assertEqual(simplified.right.op, Op.MUL)
-        self.assertEqual(simplified.right.left.value, -2)
+        self.assertEqual(simplified.right.left.value, 2)
 
     def test_reported_issue_logic(self):
         # 2 * (1 + x^2) - 4x^2 -> 2 - 2x^2
@@ -258,11 +257,11 @@ class TestSimplification(unittest.TestCase):
         
         simplified = simplify(node)
         
-        # 2 + (-2x^2)
-        self.assertEqual(simplified.op, Op.ADD)
+        # 2 - 2x^2
+        self.assertEqual(simplified.op, Op.SUB)
         self.assertEqual(simplified.left.value, 2)
         self.assertEqual(simplified.right.op, Op.MUL)
-        self.assertEqual(simplified.right.left.value, -2)
+        self.assertEqual(simplified.right.left.value, 2)
 
 if __name__ == '__main__':
     unittest.main()

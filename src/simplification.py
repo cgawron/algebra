@@ -70,6 +70,23 @@ def are_terms_equal(term1: ASTNode, term2: ASTNode) -> bool:
     """Check if two terms are identical (structurally)."""
     return str(term1) == str(term2) # Simple string comparison for now as canonical order should make them consistent.
 
+def extract_negative(node: ASTNode) -> Optional[ASTNode]:
+    """
+    Checks if a node represents a negative value.
+    Returns the positive counterpart if true, else None.
+    -3 -> 3
+    -x -> x
+    -2 * x -> 2 * x
+    """
+    if isinstance(node, Number) and node.value < 0:
+        return Number(-node.value)
+    if isinstance(node, UnaryOp) and node.op == Op.SUB:
+        return node.operand
+    if isinstance(node, BinaryOp) and node.op == Op.MUL:
+        if isinstance(node.left, Number) and node.left.value < 0:
+             return BinaryOp(Number(-node.left.value), Op.MUL, node.right)
+    return None
+
 def simplify(node: ASTNode) -> ASTNode:
     if isinstance(node, BinaryOp):
         # Simplify children first (bottom-up)
@@ -148,6 +165,11 @@ def simplify(node: ASTNode) -> ASTNode:
                  if isinstance(node.right.left, Number):
                       new_value = node.left.value + node.right.left.value
                       return simplify(BinaryOp(Number(new_value), Op.ADD, node.right.right))
+
+            # Simplification: A + (-B) -> A - B
+            negative_right = extract_negative(node.right)
+            if negative_right:
+                 return simplify(BinaryOp(node.left, Op.SUB, negative_right))
 
         # Subtraction Rules
         if node.op == Op.SUB:
