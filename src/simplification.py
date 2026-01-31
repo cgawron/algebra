@@ -264,6 +264,18 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                      new_val = node.left.value / node.right.right.value
                      return simplify(BinaryOp(Number(new_val), Op.MUL, node.right.left))
 
+            # Combine Fraction Multiplication: x * (y / z) -> (x * y) / z
+            if isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
+                # x * (y / z)
+                new_num = simplify(BinaryOp(node.left, Op.MUL, node.right.left))
+                return simplify(BinaryOp(new_num, Op.DIV, node.right.right))
+
+            # Combine Fraction Multiplication: (x / y) * z -> (x * z) / y
+            if isinstance(node.left, BinaryOp) and node.left.op == Op.DIV:
+                # (x / y) * z
+                new_num = simplify(BinaryOp(node.left.left, Op.MUL, node.right))
+                return simplify(BinaryOp(new_num, Op.DIV, node.left.right))
+
             # Distribute Constant: c * (a + b) -> c*a + c*b
             if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
                  # c * (a + b)
