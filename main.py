@@ -11,6 +11,8 @@ def main():
         "x * x * x",
         "x^2 + 2*x + 1",
         "cos(30 * x)",
+        "sqrt(x)",
+        "sqrt(x^2 + 1) * x",
         "exp(x^2 + 1)*x",
         "ln(x^2 + 1)*x",
         "sin(x)^2 + cos(x)^2",
@@ -18,7 +20,8 @@ def main():
         "cos(2*x)",
         "cos(x)^2 - sin(x)^2",
         "2*x / (x^2 + 1)",
-        "(-x^2)/(-x^3)"
+        "(-x^2)/(-x^3)",
+        "x / sqrt(x)"
     ]
     
     for expr in expressions:

@@ -76,6 +76,10 @@ def _diff(node: ASTNode, var: str) -> ASTNode:
         elif node.name == "ln":
             # (1/u) * u' = u' / u
             return BinaryOp(arg_diff, Op.DIV, arg) # Direct (u'/u) is simpler than (1/u)*u'
+        elif node.name == "sqrt":
+            # d/dx[sqrt(u)] = u' / (2*sqrt(u))
+            two_sqrt_u = BinaryOp(Number(2), Op.MUL, FunctionCall("sqrt", [arg]))
+            return BinaryOp(arg_diff, Op.DIV, two_sqrt_u)
         else:
              raise NotImplementedError(f"Differentiation for function '{node.name}' not implemented.")
     

@@ -41,10 +41,13 @@ def get_term(node: ASTNode) -> Tuple[float, ASTNode]:
 def get_power(node: ASTNode) -> Tuple[ASTNode, float]:
     """Returns (base, exponent) for multiplication."""
     # x ^ 2 -> (x, 2)
+    # sqrt(x) -> (x, 0.5)
     # x -> (x, 1)
     if isinstance(node, BinaryOp) and node.op == Op.POW:
         if isinstance(node.right, Number):
             return (node.left, node.right.value)
+    if isinstance(node, FunctionCall) and node.name == "sqrt" and len(node.args) == 1:
+        return (node.args[0], 0.5)
     return (node, 1)
 
 def get_trig_arg(node: ASTNode, func_name: str, target_exponent: float) -> Optional[ASTNode]:
@@ -372,6 +375,25 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                             # c / x^|new_exp|
                             return simplify(BinaryOp(c, Op.DIV, BinaryOp(b1, Op.POW, Number(-new_exp))))
             
+            # x^a / (c * x^b) → (1/c) * x^(a-b) or 1/(c * x^(b-a))
+            if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
+                if isinstance(node.right.left, Number):
+                    c = node.right.left
+                    denominator_power_part = node.right.right
+                    b1, e1 = get_power(node.left)
+                    b2, e2 = get_power(denominator_power_part)
+                    if are_terms_equal(b1, b2):
+                        new_exp = e1 - e2
+                        one_over_c = BinaryOp(Number(1), Op.DIV, c)
+                        if new_exp == 0:
+                            return one_over_c
+                        elif new_exp > 0:
+                            # (1/c) * x^(a-b)
+                            return simplify(BinaryOp(one_over_c, Op.MUL, BinaryOp(b1, Op.POW, Number(new_exp))))
+                        else:
+                            # 1 / (c * x^|new_exp|)
+                            return simplify(BinaryOp(Number(1), Op.DIV, BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, Number(-new_exp)))))
+            
             # Combine Powers: x^a / x^b -> x^(a-b)
             b1, e1 = get_power(node.left)
             b2, e2 = get_power(node.right)
@@ -417,6 +439,10 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
     elif isinstance(node, FunctionCall):
         new_args = [simplify(arg) for arg in node.args]
         node = FunctionCall(node.name, new_args)
+        
+        # Normalize sqrt to power notation for better simplification
+        if node.name == "sqrt" and len(node.args) == 1:
+            return BinaryOp(node.args[0], Op.POW, Number(0.5))
 
     if debug:
         print(f"{indent}← {node}")

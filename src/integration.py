@@ -176,6 +176,9 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                          primitive = FunctionCall("sin", [u])
                      elif func_node.name == "exp": # int(exp(u)du) -> exp(u)
                          primitive = FunctionCall("exp", [u])
+                     elif func_node.name == "sqrt": # int(sqrt(u)du) -> (2/3) * u^(3/2)
+                         u_to_three_halves = BinaryOp(u, Op.POW, Number(1.5))
+                         primitive = BinaryOp(BinaryOp(Number(2), Op.DIV, Number(3)), Op.MUL, u_to_three_halves)
                      elif func_node.name == "ln": # int(ln(u)du) -> u*ln(u) - u
                          # u * ln(u) - u
                          term1 = BinaryOp(u, Op.MUL, FunctionCall("ln", [u]))
@@ -278,6 +281,10 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                      primitive = FunctionCall("sin", [arg])
                 elif node.name == "exp": # int(exp) -> exp
                      primitive = FunctionCall("exp", [arg])
+                elif node.name == "sqrt": # int(sqrt(u)) -> (2/3) * u^(3/2)
+                     # sqrt(u) = u^(1/2), integral is u^(3/2) / (3/2) = (2/3) * u^(3/2)
+                     u_to_three_halves = BinaryOp(arg, Op.POW, Number(1.5))
+                     primitive = BinaryOp(BinaryOp(Number(2), Op.DIV, Number(3)), Op.MUL, u_to_three_halves)
                 elif node.name == "ln": # int(ln(x)) -> x*ln(x) - x
                      # int(ln(u)) -> u*ln(u) - u.
                      term1 = BinaryOp(arg, Op.MUL, FunctionCall("ln", [arg]))
