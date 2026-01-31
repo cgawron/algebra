@@ -51,8 +51,29 @@ def _diff(node: ASTNode, var: str) -> ASTNode:
                 base_pow = BinaryOp(node.left, Op.POW, new_exponent)
                 term = BinaryOp(exponent, Op.MUL, base_pow)
                 return BinaryOp(term, Op.MUL, diff(node.left, var))
+            # Check for b^u case (constant base, variable exp)
+            elif isinstance(node.left, (Number, Rational)):
+                # b^u * ln(b) * u'
+                base = node.left
+                exponent = node.right
+                ln_base = FunctionCall("ln", [base])
+                term = BinaryOp(node, Op.MUL, ln_base)
+                return BinaryOp(term, Op.MUL, diff(exponent, var))
             else:
-                raise NotImplementedError("Differentiation for non-constant exponent not implemented yet.")
+                # General case: u^v -> u^v * (v' * ln(u) + v * u' / u)
+                base = node.left
+                exponent = node.right
+                base_diff = diff(base, var)
+                exponent_diff = diff(exponent, var)
+                
+                ln_base = FunctionCall("ln", [base])
+                term1 = BinaryOp(exponent_diff, Op.MUL, ln_base)
+                
+                term2_num = BinaryOp(exponent, Op.MUL, base_diff)
+                term2 = BinaryOp(term2_num, Op.DIV, base)
+                
+                sum_terms = BinaryOp(term1, Op.ADD, term2)
+                return BinaryOp(node, Op.MUL, sum_terms)
 
     if isinstance(node, FunctionCall):
         if len(node.args) != 1:
