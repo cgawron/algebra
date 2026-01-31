@@ -1,5 +1,6 @@
-from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op
-from typing import Tuple, Optional
+from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op, Rational
+from typing import Tuple, Optional, Union
+import math
 
 def get_rank(node: ASTNode) -> int:
     """
@@ -20,40 +21,153 @@ def get_rank(node: ASTNode) -> int:
         return 3
     if isinstance(node, FunctionCall):
         return 4
+    if isinstance(node, Rational):
+        return 0
     return 100
 
-def get_term(node: ASTNode) -> Tuple[float, ASTNode]:
+def _gcd(a: int, b: int) -> int:
+    while b:
+        a, b = b, a % b
+    return abs(a)
+
+def _simplify_rational(n: int, d: int) -> ASTNode:
+    if d == 0:
+        raise ValueError("Division by zero")
+    if d < 0:
+        n, d = -n, -d
+    common = _gcd(n, d)
+    n //= common
+    d //= common
+    if d == 1:
+        return Number(n)
+    return Rational(n, d)
+
+def to_fraction(n: Union[Number, Rational]) -> Tuple[int, int]:
+    if isinstance(n, Rational):
+        return n.numerator, n.denominator
+    if isinstance(n, Number):
+        if isinstance(n.value, int):
+            return n.value, 1
+        # Float case - avoiding for now in this path if possible, or raising error?
+        # For now, let's assume we don't mix float and rational to produce rational unless float is integer.
+        if n.value.is_integer():
+            return int(n.value), 1
+    raise ValueError(f"Cannot convert {n} to fraction")
+
+def add_scalars(n1: ASTNode, n2: ASTNode) -> ASTNode:
+    if isinstance(n1, Number) and isinstance(n1.value, float): return Number(n1.value + n2.value if isinstance(n2, Number) else n1.value + n2.value) # Fallback to float
+    if isinstance(n2, Number) and isinstance(n2.value, float): return Number(n1.value + n2.value if isinstance(n1, Number) else n1.value + n2.value)
+    
+    # Both are int-like (Number(int) or Rational)
+    try:
+        num1, den1 = to_fraction(n1)
+        num2, den2 = to_fraction(n2)
+        return _simplify_rational(num1 * den2 + num2 * den1, den1 * den2)
+    except ValueError:
+        pass
+    
+    # Fallback
+    v1 = n1.value
+    v2 = n2.value
+    return Number(v1 + v2)
+
+def sub_scalars(n1: ASTNode, n2: ASTNode) -> ASTNode:
+    if isinstance(n1, Number) and isinstance(n1.value, float): return Number(n1.value - n2.value if isinstance(n2, Number) else n1.value - n2.value)
+    if isinstance(n2, Number) and isinstance(n2.value, float): return Number(n1.value - n2.value if isinstance(n1, Number) else n1.value - n2.value)
+    
+    try:
+        num1, den1 = to_fraction(n1)
+        num2, den2 = to_fraction(n2)
+        return _simplify_rational(num1 * den2 - num2 * den1, den1 * den2)
+    except ValueError:
+        pass
+        
+    v1 = n1.value
+    v2 = n2.value
+    return Number(v1 - v2)
+
+def mul_scalars(n1: ASTNode, n2: ASTNode) -> ASTNode:
+    if isinstance(n1, Number) and isinstance(n1.value, float): return Number(n1.value * n2.value if isinstance(n2, Number) else n1.value * n2.value)
+    if isinstance(n2, Number) and isinstance(n2.value, float): return Number(n1.value * n2.value if isinstance(n1, Number) else n1.value * n2.value)
+    
+    try:
+        num1, den1 = to_fraction(n1)
+        num2, den2 = to_fraction(n2)
+        return _simplify_rational(num1 * num2, den1 * den2)
+    except ValueError:
+        pass
+
+    v1 = n1.value
+    v2 = n2.value
+    return Number(v1 * v2)
+
+def div_scalars(n1: ASTNode, n2: ASTNode) -> ASTNode:
+    # If any float, return float
+    if (isinstance(n1, Number) and isinstance(n1.value, float)) or \
+       (isinstance(n2, Number) and isinstance(n2.value, float)):
+        v1 = n1.value
+        v2 = n2.value
+        return Number(v1 / v2)
+        
+    # Try exact rational division
+    try:
+        num1, den1 = to_fraction(n1)
+        num2, den2 = to_fraction(n2)
+        return _simplify_rational(num1 * den2, den1 * num2)
+    except ValueError:
+        pass
+        
+    v1 = n1.value
+    v2 = n2.value
+    return Number(v1 / v2)
+
+def pow_scalars(n1: ASTNode, n2: ASTNode) -> ASTNode:
+    # Powers are tricky with rationals. For now, if exponent is integer, we can try.
+    # (a/b)^n -> a^n / b^n
+    if isinstance(n2, Number) and isinstance(n2.value, int):
+        try:
+             num1, den1 = to_fraction(n1)
+             return _simplify_rational(num1 ** n2.value, den1 ** n2.value)
+        except ValueError:
+             pass
+    
+    v1 = n1.value
+    v2 = n2.value
+    return Number(v1 ** v2)
+
+def get_term(node: ASTNode) -> Tuple[ASTNode, ASTNode]:
     """Returns (coefficient, base_node) for addition."""
     # 2 * x -> (2, x)
     # x -> (1, x)
     if isinstance(node, BinaryOp) and node.op == Op.MUL:
-        if isinstance(node.left, Number):
-            return (node.left.value, node.right)
+        if isinstance(node.left, (Number, Rational)):
+            return (node.left, node.right)
     # Unary -x -> (-1, x)
     if isinstance(node, UnaryOp) and node.op == Op.SUB:
          # Handle -(2 * x) -> (-2, x)
          if isinstance(node.operand, BinaryOp) and node.operand.op == Op.MUL:
-             if isinstance(node.operand.left, Number):
-                 return (-1 * node.operand.left.value, node.operand.right)
-         return (-1, node.operand)
-    return (1, node)
+             if isinstance(node.operand.left, (Number, Rational)):
+                 return (simplify(UnaryOp(Op.SUB, node.operand.left)), node.operand.right)
+         return (Number(-1), node.operand)
+    return (Number(1), node)
 
-def get_power(node: ASTNode) -> Tuple[ASTNode, float]:
+def get_power(node: ASTNode) -> Tuple[ASTNode, ASTNode]:
     """Returns (base, exponent) for multiplication."""
     # x ^ 2 -> (x, 2)
     # sqrt(x) -> (x, 0.5)
     # x -> (x, 1)
     if isinstance(node, BinaryOp) and node.op == Op.POW:
-        if isinstance(node.right, Number):
-            return (node.left, node.right.value)
+        if isinstance(node.right, (Number, Rational)):
+            return (node.left, node.right)
     if isinstance(node, FunctionCall) and node.name == "sqrt" and len(node.args) == 1:
-        return (node.args[0], 0.5)
-    return (node, 1)
+        return (node.args[0], Rational(1, 2))
+    return (node, Number(1))
 
 def get_trig_arg(node: ASTNode, func_name: str, target_exponent: float) -> Optional[ASTNode]:
     """
     Checks if node is func_name(arg) ^ target_exponent.
     Returns arg if match, None otherwise.
+    target_exponent kept as float for convenience in pattern matching integers 1, 2 etc.
     """
     # Check for direct function call if exponent is 1
     if target_exponent == 1:
@@ -81,13 +195,14 @@ def extract_negative(node: ASTNode) -> Optional[ASTNode]:
     -x -> x
     -2 * x -> 2 * x
     """
-    if isinstance(node, Number) and node.value < 0:
-        return Number(-node.value)
+    if isinstance(node, (Number, Rational)) and node.value < 0:
+        if isinstance(node, Number): return Number(-node.value)
+        if isinstance(node, Rational): return Rational(-node.numerator, node.denominator)
     if isinstance(node, UnaryOp) and node.op == Op.SUB:
         return node.operand
     if isinstance(node, BinaryOp) and node.op == Op.MUL:
-        if isinstance(node.left, Number) and node.left.value < 0:
-             return BinaryOp(Number(-node.left.value), Op.MUL, node.right)
+        if isinstance(node.left, (Number, Rational)) and node.left.value < 0:
+             return BinaryOp(simplify(UnaryOp(Op.SUB, node.left)), Op.MUL, node.right)
     return None
 
 def _apply_rule(rule_name: str, result: ASTNode, original: ASTNode, depth: int) -> ASTNode:
@@ -139,17 +254,17 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                 return node.right 
             if isinstance(node.right, Number) and node.right.value == 0:
                 return node.left
-            if isinstance(node.left, Number) and isinstance(node.right, Number):
-                return Number(node.left.value + node.right.value)
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, (Number, Rational)):
+                return add_scalars(node.left, node.right)
             
             # Combine Like Terms: c1*x + c2*x
             c1, t1 = get_term(node.left)
             c2, t2 = get_term(node.right)
             if are_terms_equal(t1, t2):
-                new_coeff = c1 + c2
-                if new_coeff == 0: return Number(0)
-                if new_coeff == 1: return t1
-                return simplify(BinaryOp(Number(new_coeff), Op.MUL, t1))
+                new_coeff = add_scalars(c1, c2)
+                if isinstance(new_coeff, Number) and new_coeff.value == 0: return Number(0)
+                if isinstance(new_coeff, Number) and new_coeff.value == 1: return t1
+                return simplify(BinaryOp(new_coeff, Op.MUL, t1))
             
             # Trigonometric Identities
             # sin(u)^2 + cos(u)^2 = 1
@@ -171,20 +286,23 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                      return Number(c1)
             
             # Double Angle Cosine: cos(u)^2 - sin(u)^2 = cos(2u)
-            if c1 == -c2:
+            # Need to check if c1 == -c2. Use scalar addition to 0? Or compare values.
+            # Ideally Rational compare.
+            sum_coeffs = add_scalars(c1, c2)
+            if isinstance(sum_coeffs, Number) and sum_coeffs.value == 0:
                 # Case 1: t1=cos^2, t2=sin^2 -> c1 * (cos^2 - sin^2)
                 cos_arg = get_trig_arg(t1, "cos", 2)
                 sin_arg = get_trig_arg(t2, "sin", 2)
                 if cos_arg and sin_arg and are_terms_equal(cos_arg, sin_arg):
                      double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg))
-                     return simplify(BinaryOp(Number(c1), Op.MUL, FunctionCall("cos", [double_arg])))
+                     return simplify(BinaryOp(c1, Op.MUL, FunctionCall("cos", [double_arg])))
                 
                 # Case 2: t1=sin^2, t2=cos^2 -> c2 * (cos^2 - sin^2)
                 sin_arg_l = get_trig_arg(t1, "sin", 2)
                 cos_arg_r = get_trig_arg(t2, "cos", 2)
                 if sin_arg_l and cos_arg_r and are_terms_equal(sin_arg_l, cos_arg_r):
                      double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg_r))
-                     return simplify(BinaryOp(Number(c2), Op.MUL, FunctionCall("cos", [double_arg])))
+                     return simplify(BinaryOp(c2, Op.MUL, FunctionCall("cos", [double_arg])))
 
             # Associative Constant Folding
             if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
@@ -203,17 +321,17 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                 return node.left 
             if isinstance(node.left, Number) and node.left.value == 0:
                 return simplify(UnaryOp(Op.SUB, node.right))
-            if isinstance(node.left, Number) and isinstance(node.right, Number):
-                return Number(node.left.value - node.right.value)
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, (Number, Rational)):
+                return sub_scalars(node.left, node.right)
             
             # Combine Like Terms: c1*x - c2*x
             c1, t1 = get_term(node.left)
             c2, t2 = get_term(node.right)
             if are_terms_equal(t1, t2):
-                new_coeff = c1 - c2
-                if new_coeff == 0: return Number(0)
-                if new_coeff == 1: return t1
-                return simplify(BinaryOp(Number(new_coeff), Op.MUL, t1))
+                new_coeff = sub_scalars(c1, c2)
+                if isinstance(new_coeff, Number) and new_coeff.value == 0: return Number(0)
+                if isinstance(new_coeff, Number) and new_coeff.value == 1: return t1
+                return simplify(BinaryOp(new_coeff, Op.MUL, t1))
             
             # Trig Identities for Subtraction?
             # cos^2 - sin^2.
@@ -225,12 +343,12 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             cos_arg = get_trig_arg(t1, "cos", 2)
             sin_arg = get_trig_arg(t2, "sin", 2)
             if cos_arg and sin_arg and are_terms_equal(cos_arg, sin_arg):
-                 if c1 == c2:
+                 if are_terms_equal(c1, c2): # Need robust equality for ASTNode coefficients
                       # c * (cos^2 - sin^2) -> c * cos(2u)
                       double_arg = simplify(BinaryOp(Number(2), Op.MUL, cos_arg))
                       result = FunctionCall("cos", [double_arg])
-                      if c1 == 1: return result
-                      return simplify(BinaryOp(Number(c1), Op.MUL, result))
+                      if isinstance(c1, Number) and c1.value == 1: return result
+                      return simplify(BinaryOp(c1, Op.MUL, result))
 
             # Associativity: (A + B) - C -> A + (B - C)
             # This allows combining terms like (x + 2x^2) - 4x^2 -> x + (2x^2 - 4x^2)
@@ -249,20 +367,20 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             if isinstance(node.right, Number) and node.right.value == 0: return Number(0)
             if isinstance(node.left, Number) and node.left.value == 1: return node.right
             if isinstance(node.right, Number) and node.right.value == 1: return node.left
-            if isinstance(node.left, Number) and isinstance(node.right, Number):
-                return Number(node.left.value * node.right.value)
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, (Number, Rational)):
+                return mul_scalars(node.left, node.right)
             
             # Associative Constant Folding: c1 * (c2 * x) -> (c1 * c2) * x
-            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
-                 if isinstance(node.right.left, Number):
-                      new_value = node.left.value * node.right.left.value
-                      return simplify(BinaryOp(Number(new_value), Op.MUL, node.right.right))
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
+                 if isinstance(node.right.left, (Number, Rational)):
+                      new_value = mul_scalars(node.left, node.right.left)
+                      return simplify(BinaryOp(new_value, Op.MUL, node.right.right))
             
             # Constant Combination: c * (x / d) -> (c/d) * x
-            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
-                if isinstance(node.right.right, Number) and node.right.right.value != 0:
-                     new_val = node.left.value / node.right.right.value
-                     return simplify(BinaryOp(Number(new_val), Op.MUL, node.right.left))
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
+                if isinstance(node.right.right, (Number, Rational)) and node.right.right.value != 0:
+                     new_val = div_scalars(node.left, node.right.right)
+                     return simplify(BinaryOp(new_val, Op.MUL, node.right.left))
 
             # Combine Fraction Multiplication: x * (y / z) -> (x * y) / z
             if isinstance(node.right, BinaryOp) and node.right.op == Op.DIV:
@@ -277,7 +395,7 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                 return simplify(BinaryOp(new_num, Op.DIV, node.left.right))
 
             # Distribute Constant: c * (a + b) -> c*a + c*b
-            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, BinaryOp) and node.right.op == Op.ADD:
                  # c * (a + b)
                  c = node.left
                  a = node.right.left
@@ -287,7 +405,7 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                  return simplify(BinaryOp(new_left, Op.ADD, new_right))
             
             # Distribute Constant: c * (a - b) -> c*a - c*b
-            if isinstance(node.left, Number) and isinstance(node.right, BinaryOp) and node.right.op == Op.SUB:
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, BinaryOp) and node.right.op == Op.SUB:
                  # c * (a - b)
                  c = node.left
                  a = node.right.left
@@ -297,13 +415,13 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                  return simplify(BinaryOp(new_left, Op.SUB, new_right))
             
             # Pull constant from right child: x * (c * y) -> c * (x * y)
-            if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL and isinstance(node.right.left, Number):
+            if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL and isinstance(node.right.left, (Number, Rational)):
                  c = node.right.left
                  y = node.right.right
                  return simplify(BinaryOp(c, Op.MUL, BinaryOp(node.left, Op.MUL, y)))
             
             # Pull constant from left child: (c * x) * y -> c * (x * y)
-            if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL and isinstance(node.left.left, Number):
+            if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL and isinstance(node.left.left, (Number, Rational)):
                  c = node.left.left
                  x = node.left.right
                  return simplify(BinaryOp(c, Op.MUL, BinaryOp(x, Op.MUL, node.right)))
@@ -327,10 +445,10 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
                 b1, e1 = get_power(node.left)
                 b2, e2 = get_power(node.right)
                 if are_terms_equal(b1, b2):
-                    new_exp = e1 + e2
-                    if new_exp == 0: return Number(1)
-                    if new_exp == 1: return b1
-                    return simplify(BinaryOp(b1, Op.POW, Number(new_exp)))
+                    new_exp = add_scalars(e1, e2)
+                    if isinstance(new_exp, Number) and new_exp.value == 0: return Number(1)
+                    if isinstance(new_exp, Number) and new_exp.value == 1: return b1
+                    return simplify(BinaryOp(b1, Op.POW, new_exp))
 
         # Division Rules
         if node.op == Op.DIV:
@@ -342,9 +460,9 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
 
             # Cancellation: x / (c * x) -> 1/c
             if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
-                 if are_terms_equal(node.left, node.right.right) and isinstance(node.right.left, Number): # x / (c*x)
+                 if are_terms_equal(node.left, node.right.right) and isinstance(node.right.left, (Number, Rational)): # x / (c*x)
                      return simplify(BinaryOp(Number(1), Op.DIV, node.right.left))
-                 if are_terms_equal(node.left, node.right.left) and isinstance(node.right.right, Number): # x / (x*c)
+                 if are_terms_equal(node.left, node.right.left) and isinstance(node.right.right, (Number, Rational)): # x / (x*c)
                      return simplify(BinaryOp(Number(1), Op.DIV, node.right.right))
 
             # Cancellation: x / -x -> -1
@@ -367,53 +485,80 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             
             if isinstance(node.right, Number) and node.right.value == 1:
                  return node.left
-            if isinstance(node.left, Number) and isinstance(node.right, Number) and node.right.value != 0:
-                 return Number(node.left.value / node.right.value)
+            if isinstance(node.left, (Number, Rational)) and isinstance(node.right, (Number, Rational)) and node.right.value != 0:
+                 return div_scalars(node.left, node.right)
              
             # (c * x^a) / x^b -> c * x^(a-b) or c / x^(b-a)
             if isinstance(node.left, BinaryOp) and node.left.op == Op.MUL:
-                if isinstance(node.left.left, Number):
+                if isinstance(node.left.left, (Number, Rational)):
                     c = node.left.left
                     numerator_power_part = node.left.right
                     b1, e1 = get_power(numerator_power_part)
                     b2, e2 = get_power(node.right)
                     if are_terms_equal(b1, b2):
-                        new_exp = e1 - e2
-                        if new_exp == 0:
+                        new_exp = sub_scalars(e1, e2)
+                        if isinstance(new_exp, Number) and new_exp.value == 0:
                             return c
-                        elif new_exp > 0:
-                            return simplify(BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, Number(new_exp))))
+                        # Check positive logic? scalar arithmetic returns a value.
+                        # We need to know if new_exp > 0.
+                        is_pos = False
+                        if isinstance(new_exp, Number) and new_exp.value > 0: is_pos = True
+                        if isinstance(new_exp, Rational) and new_exp.numerator * new_exp.denominator > 0: is_pos = True
+                        
+                        if is_pos:
+                            return simplify(BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, new_exp)))
                         else:
                             # c / x^|new_exp|
-                            return simplify(BinaryOp(c, Op.DIV, BinaryOp(b1, Op.POW, Number(-new_exp))))
+                            neg_exp = simplify(UnaryOp(Op.SUB, new_exp)) # Actually need absolute value logic or just negate
+                            # Better: c / x^(-new_exp)
+                            # But we want positive exponent in denominator?
+                            # If new_exp is negative, -new_exp is positive.
+                            
+                            # extract_negative might help but scalar sub_scalars returns a simplified node.
+                            # Just use UnaryOp(Op.SUB, new_exp) and let simplification handle -(-1/2) -> 1/2?
+                            # Or helper neg_scalar(n).
+                            
+                            if isinstance(new_exp, Number): neg_exp = Number(-new_exp.value)
+                            elif isinstance(new_exp, Rational): neg_exp = Rational(-new_exp.numerator, new_exp.denominator)
+                            else: neg_exp = UnaryOp(Op.SUB, new_exp)
+                            
+                            return simplify(BinaryOp(c, Op.DIV, BinaryOp(b1, Op.POW, neg_exp)))
             
             # x^a / (c * x^b) → (1/c) * x^(a-b) or 1/(c * x^(b-a))
             if isinstance(node.right, BinaryOp) and node.right.op == Op.MUL:
-                if isinstance(node.right.left, Number):
+                if isinstance(node.right.left, (Number, Rational)):
                     c = node.right.left
                     denominator_power_part = node.right.right
                     b1, e1 = get_power(node.left)
                     b2, e2 = get_power(denominator_power_part)
                     if are_terms_equal(b1, b2):
-                        new_exp = e1 - e2
+                        new_exp = sub_scalars(e1, e2)
                         one_over_c = BinaryOp(Number(1), Op.DIV, c)
-                        if new_exp == 0:
+                        if isinstance(new_exp, Number) and new_exp.value == 0:
                             return one_over_c
-                        elif new_exp > 0:
+                            
+                        is_pos = False
+                        if isinstance(new_exp, Number) and new_exp.value > 0: is_pos = True
+                        if isinstance(new_exp, Rational) and new_exp.numerator * new_exp.denominator > 0: is_pos = True
+
+                        if is_pos:
                             # (1/c) * x^(a-b)
-                            return simplify(BinaryOp(one_over_c, Op.MUL, BinaryOp(b1, Op.POW, Number(new_exp))))
+                            return simplify(BinaryOp(one_over_c, Op.MUL, BinaryOp(b1, Op.POW, new_exp)))
                         else:
                             # 1 / (c * x^|new_exp|)
-                            return simplify(BinaryOp(Number(1), Op.DIV, BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, Number(-new_exp)))))
+                            if isinstance(new_exp, Number): neg_exp = Number(-new_exp.value)
+                            elif isinstance(new_exp, Rational): neg_exp = Rational(-new_exp.numerator, new_exp.denominator)
+                            else: neg_exp = UnaryOp(Op.SUB, new_exp)
+                            return simplify(BinaryOp(Number(1), Op.DIV, BinaryOp(c, Op.MUL, BinaryOp(b1, Op.POW, neg_exp))))
             
             # Combine Powers: x^a / x^b -> x^(a-b)
             b1, e1 = get_power(node.left)
             b2, e2 = get_power(node.right)
             if are_terms_equal(b1, b2):
-                 new_exp = e1 - e2
-                 if new_exp == 0: return Number(1)
-                 if new_exp == 1: return b1
-                 return simplify(BinaryOp(b1, Op.POW, Number(new_exp)))
+                 new_exp = sub_scalars(e1, e2)
+                 if isinstance(new_exp, Number) and new_exp.value == 0: return Number(1)
+                 if isinstance(new_exp, Number) and new_exp.value == 1: return b1
+                 return simplify(BinaryOp(b1, Op.POW, new_exp))
 
 
         # Exponentiation Rules
@@ -421,15 +566,16 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
             if isinstance(node.right, Number):
                 if node.right.value == 0: return Number(1)
                 if node.right.value == 1: return node.left
-                if isinstance(node.left, Number):
-                     return Number(node.left.value ** node.right.value)
+                if isinstance(node.left, (Number, Rational)):
+                     return pow_scalars(node.left, node.right)
                 # (x^a)^b -> x^(a*b)
                 if isinstance(node.left, BinaryOp) and node.left.op == Op.POW:
-                    if isinstance(node.left.right, Number):
+                    if isinstance(node.left.right, (Number, Rational)):
                          b1 = node.left.left
-                         e1 = node.left.right.value
-                         e2 = node.right.value
-                         return simplify(BinaryOp(b1, Op.POW, Number(e1 * e2)))
+                         e1 = node.left.right
+                         e2 = node.right
+                         new_exp = mul_scalars(e1, e2)
+                         return simplify(BinaryOp(b1, Op.POW, new_exp))
                 
                 # (-a)^(even) -> a^(even)
                 if isinstance(node.left, UnaryOp) and node.left.op == Op.SUB:
@@ -441,9 +587,11 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
     elif isinstance(node, UnaryOp):
         operand_simplified = simplify(node.operand)
         node = UnaryOp(node.op, operand_simplified)
-        if isinstance(node.operand, Number):
+        if isinstance(node.operand, (Number, Rational)):
             if node.op == Op.ADD: return node.operand
-            if node.op == Op.SUB: return Number(-node.operand.value)
+            if node.op == Op.SUB:
+                 if isinstance(node.operand, Number): return Number(-node.operand.value)
+                 if isinstance(node.operand, Rational): return Rational(-node.operand.numerator, node.operand.denominator)
         # Simplify -(-x) -> x
         if node.op == Op.SUB and isinstance(node.operand, UnaryOp) and node.operand.op == Op.SUB:
              return node.operand.operand
@@ -454,7 +602,7 @@ def simplify(node: ASTNode, _depth: int = 0) -> ASTNode:
         
         # Normalize sqrt to power notation for better simplification
         if node.name == "sqrt" and len(node.args) == 1:
-            return BinaryOp(node.args[0], Op.POW, Number(0.5))
+            return BinaryOp(node.args[0], Op.POW, Rational(1, 2))
 
     if debug:
         print(f"{indent}← {node}")

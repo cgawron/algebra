@@ -1,11 +1,11 @@
-from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op
+from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op, Rational
 from .simplification import simplify, are_terms_equal
 from .differentiation import diff
 from typing import Tuple, Optional
 
 def is_constant(node: ASTNode, var: str) -> bool:
     """Check if node is free of variable `var`."""
-    if isinstance(node, Number):
+    if isinstance(node, (Number, Rational)):
         return True
     if isinstance(node, Variable):
         return node.name != var
@@ -125,7 +125,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                 # Check if potential_du is proportional to target_du
                 
                 # Handling 0 derivative
-                if isinstance(target_du, Number) and target_du.value == 0:
+                if isinstance(target_du, (Number, Rational)) and target_du.value == 0:
                     continue
                     
                 ratio = simplify(BinaryOp(potential_du, Op.DIV, target_du))
@@ -136,7 +136,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                     k = ratio
                     
                     # Handle n=-1 -> k * ln(u)
-                    if isinstance(n, Number) and n.value == -1:
+                    if isinstance(n, (Number, Rational)) and n.value == -1:
                         integral = BinaryOp(k, Op.MUL, FunctionCall("ln", [u]))
                         return integral
                     
@@ -161,7 +161,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                 
                 target_du = simplify(diff(u, var))
                 
-                if isinstance(target_du, Number) and target_du.value == 0:
+                if isinstance(target_du, (Number, Rational)) and target_du.value == 0:
                     continue
                     
                 ratio = simplify(BinaryOp(potential_du, Op.DIV, target_du))
@@ -177,8 +177,8 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                      elif func_node.name == "exp": # int(exp(u)du) -> exp(u)
                          primitive = FunctionCall("exp", [u])
                      elif func_node.name == "sqrt": # int(sqrt(u)du) -> (2/3) * u^(3/2)
-                         u_to_three_halves = BinaryOp(u, Op.POW, Number(1.5))
-                         primitive = BinaryOp(BinaryOp(Number(2), Op.DIV, Number(3)), Op.MUL, u_to_three_halves)
+                         u_to_three_halves = BinaryOp(u, Op.POW, Rational(3, 2))
+                         primitive = BinaryOp(Rational(2, 3), Op.MUL, u_to_three_halves)
                      elif func_node.name == "ln": # int(ln(u)du) -> u*ln(u) - u
                          # u * ln(u) - u
                          term1 = BinaryOp(u, Op.MUL, FunctionCall("ln", [u]))
@@ -202,7 +202,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
             target_du = simplify(diff(u, var))
             
             # If du is 0, u is constant, handled by is_constant above or caught here
-            if isinstance(target_du, Number) and target_du.value == 0:
+            if isinstance(target_du, (Number, Rational)) and target_du.value == 0:
                  pass # Division by constant handled above
             else:
                  potential_du = node.left
@@ -220,7 +220,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
             # Power rule: int(x^n)
             if isinstance(node.left, Variable) and node.left.name == var and is_constant(node.right, var):
                 exponent = node.right
-                if isinstance(exponent, Number) and exponent.value == -1:
+                if isinstance(exponent, (Number, Rational)) and exponent.value == -1:
                     return FunctionCall("ln", [node.left])
                 
                 new_exponent = simplify(BinaryOp(exponent, Op.ADD, Number(1)))
@@ -231,7 +231,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
             if coeffs and is_constant(node.right, var):
                 a, b = coeffs
                 # Check if a!=0
-                if isinstance(a, Number) and a.value == 0:
+                if isinstance(a, (Number, Rational)) and a.value == 0:
                      # Then base is constant b. int(b^n) -> b^n * x
                      return BinaryOp(node, Op.MUL, Variable(var))
                 
@@ -239,7 +239,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                 # u = ax+b, du = a dx => dx = du/a
                 # int(u^n du/a) = (1/a) * u^(n+1)/(n+1)
                 
-                if isinstance(exponent, Number) and exponent.value == -1:
+                if isinstance(exponent, (Number, Rational)) and exponent.value == -1:
                      # (1/a) * ln(u)
                      ln_node = FunctionCall("ln", [node.left])
                      return BinaryOp(ln_node, Op.DIV, a)
@@ -266,7 +266,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
             if coeffs:
                 a, b = coeffs
                 # Check for zero slope a=0 (constant arg)
-                if isinstance(a, Number) and a.value == 0:
+                if isinstance(a, (Number, Rational)) and a.value == 0:
                      # Function is constant. int(C) -> C * x
                      return BinaryOp(node, Op.MUL, Variable(var))
                 
@@ -283,8 +283,8 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                      primitive = FunctionCall("exp", [arg])
                 elif node.name == "sqrt": # int(sqrt(u)) -> (2/3) * u^(3/2)
                      # sqrt(u) = u^(1/2), integral is u^(3/2) / (3/2) = (2/3) * u^(3/2)
-                     u_to_three_halves = BinaryOp(arg, Op.POW, Number(1.5))
-                     primitive = BinaryOp(BinaryOp(Number(2), Op.DIV, Number(3)), Op.MUL, u_to_three_halves)
+                     u_to_three_halves = BinaryOp(arg, Op.POW, Rational(3, 2))
+                     primitive = BinaryOp(Rational(2, 3), Op.MUL, u_to_three_halves)
                 elif node.name == "ln": # int(ln(x)) -> x*ln(x) - x
                      # int(ln(u)) -> u*ln(u) - u.
                      term1 = BinaryOp(arg, Op.MUL, FunctionCall("ln", [arg]))
@@ -294,7 +294,7 @@ def _integrate(node: ASTNode, var: str) -> ASTNode:
                      # Result = (1/a) * primitive
                      # -> primitive / a
                      # Only if a != 1
-                     if isinstance(a, Number) and a.value == 1:
+                     if isinstance(a, (Number, Rational)) and a.value == 1:
                           return primitive
                      return BinaryOp(primitive, Op.DIV, a)
 

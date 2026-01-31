@@ -18,7 +18,7 @@ class TokenType(Enum):
 @dataclass
 class Token:
     type: TokenType
-    value: Union[float, str, None] = None
+    value: Union[float, int, str, None] = None
 
 class Lexer:
     def __init__(self, text: str):
@@ -39,12 +39,19 @@ class Lexer:
 
     def number(self) -> Token:
         result = ''
+        is_float = False
         while self.current_char is not None and (self.current_char.isdigit() or self.current_char == '.'):
-            if self.current_char == '.' and '.' in result:
-                break # Simple error handling for multiple dots: let it stop here
+            if self.current_char == '.':
+                if is_float:
+                    break # Simple error handling
+                is_float = True
             result += self.current_char
             self.advance()
-        return Token(TokenType.NUMBER, float(result))
+        
+        if is_float:
+            return Token(TokenType.NUMBER, float(result))
+        else:
+            return Token(TokenType.NUMBER, int(result))
 
     def identifier(self) -> Token:
         result = ''

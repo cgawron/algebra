@@ -20,11 +20,23 @@ class ASTNode:
 
 @dataclass(frozen=True)
 class Number(ASTNode):
-    value: float
+    value: Union[float, int]
     def __str__(self):
         if isinstance(self.value, float) and self.value.is_integer():
              return str(int(self.value))
         return str(self.value)
+
+@dataclass(frozen=True)
+class Rational(ASTNode):
+    numerator: int
+    denominator: int
+    
+    def __str__(self):
+        return f"{self.numerator}/{self.denominator}"
+    
+    @property
+    def value(self) -> float:
+        return self.numerator / self.denominator
 
 @dataclass(frozen=True)
 class Variable(ASTNode):

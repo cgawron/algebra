@@ -1,5 +1,5 @@
-from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op
-from .simplification import simplify
+from .ast_nodes import ASTNode, Number, Variable, BinaryOp, UnaryOp, FunctionCall, Op, Rational
+from .simplification import simplify, sub_scalars, mul_scalars, div_scalars
 
 def diff(node: ASTNode, var: str) -> ASTNode:
     result = _diff(node, var)
@@ -44,12 +44,12 @@ def _diff(node: ASTNode, var: str) -> ASTNode:
             return BinaryOp(numerator, Op.DIV, denominator)
         elif node.op == Op.POW:
             # Check for x^n case (variable base, constant exp)
-            if isinstance(node.right, Number):
-                exponent = node.right.value
+            if isinstance(node.right, (Number, Rational)):
+                exponent = node.right
                 # n * u^(n-1) * u'
-                new_exponent = Number(exponent - 1)
+                new_exponent = simplify(sub_scalars(exponent, Number(1)))
                 base_pow = BinaryOp(node.left, Op.POW, new_exponent)
-                term = BinaryOp(Number(exponent), Op.MUL, base_pow)
+                term = BinaryOp(exponent, Op.MUL, base_pow)
                 return BinaryOp(term, Op.MUL, diff(node.left, var))
             else:
                 raise NotImplementedError("Differentiation for non-constant exponent not implemented yet.")
@@ -77,7 +77,10 @@ def _diff(node: ASTNode, var: str) -> ASTNode:
             # (1/u) * u' = u' / u
             return BinaryOp(arg_diff, Op.DIV, arg) # Direct (u'/u) is simpler than (1/u)*u'
         elif node.name == "sqrt":
-            # d/dx[sqrt(u)] = u' / (2*sqrt(u))
+            # d/dx[sqrt(u)] = u' / (2*sqrt(u)) -> (1/2) * u' * u^(-1/2)
+            # Actually standard form: u' / (2 * u^(1/2)) = 0.5 * u' * u^(-0.5)
+            # using Rational: 1/2 * u' * u^(-1/2)
+            # But let's keep structure similar: u' / (2 * sqrt(u))
             two_sqrt_u = BinaryOp(Number(2), Op.MUL, FunctionCall("sqrt", [arg]))
             return BinaryOp(arg_diff, Op.DIV, two_sqrt_u)
         else:
